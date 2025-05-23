@@ -14,7 +14,6 @@ module Graph
 
 import Data.Map (Map)
 import qualified Data.Map as M
-import qualified Data.Set as S
 import Data.Maybe
 
 -- An edge with a source and destination node (of type a), 
@@ -62,8 +61,6 @@ addEdge v w l g
       g { adjmap = M.adjust ((Edge v w l):) v (adjmap g) }
   | otherwise = g  -- One of the vertices does not exist, do nothing
 
-    
-
 -- | Add an edge from start to destination, but also from destination to start,
 -- with the same label.
 addBiEdge :: Ord a => a -> a -> b -> Graph a b -> Graph a b
@@ -71,12 +68,12 @@ addBiEdge v w l = addEdge v w l . addEdge w v l
 
 -- | Get all adjacent vertices (nodes) for a given node
 adj :: Ord a => a -> Graph a b -> [Edge a b]
-adj v g = M.lookup v (adjmap g)
+adj v g = M.findWithDefault [] v (adjmap g)
 
 -- | Get all vertices (nodes) in a graph
 vertices :: Graph a b -> [a]
-vertices g = undefined
+vertices g = M.keys (adjmap g)
 
 -- | Get all edges in a graph
 edges :: Graph a b -> [Edge a b]
-edges g = undefined
+edges g = concat (M.elems (adjmap g))
