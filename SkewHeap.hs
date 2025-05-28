@@ -1,6 +1,7 @@
 module SkewHeap (
     SkewHeap(..),
     empty',
+    isEmpty,
     insert,
     merge,
     delete,
@@ -15,6 +16,10 @@ data SkewHeap a = Empty | Node a (SkewHeap a) (SkewHeap a) deriving (Show, Eq)
 -- This operation is O(1).
 empty' :: SkewHeap a
 empty' = Empty
+
+isEmpty :: SkewHeap a -> Bool
+isEmpty Empty = True
+isEmpty _     = False
 
 -- | Convert a skew heap to a list.
 -- The list is sorted in ascending order.

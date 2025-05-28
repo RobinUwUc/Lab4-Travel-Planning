@@ -6,49 +6,60 @@ import RouteGUI
 import Graph 
 import qualified Graph as G
 import SkewHeap
+import qualified SkewHeap as SH
 import qualified Data.Map as M
+import Data.List (minimumBy)
 
  -- Create a module and use a sensible graph representation
 
-shortestPath :: Graph a b -> a -> a -> Maybe ([a], b)
-shortestPath g from to = 
-  let visited = []  -- List of visited nodes
-      pq = pQ [(from, 0)]  -- Priority queue initialized with the source node and distance 0
-      distMap = M.singleton from 0  -- Map to keep track of distances from the source
-      pathMap = M.singleton from []  -- Map to keep track of paths
-  in dijkstra g visited pq distMap pathMap to
-    -- If the destination is reachable, return the path and distance
+shortestPath :: (Ord a, Ord b, Num b) => Graph a b -> a -> a -> Maybe ([a], b)
+shortestPath g from to
+  | from == to = Just ([from], 0)
+  | otherwise = dijkstra initialPQ M.empty (M.singleton from 0)
   where
-    dijkstra :: Ord a => Graph a b -> [a] -> SkewHeap (a, b) -> M.Map a b -> M.Map a [a] -> a -> Maybe ([a], b)
-    dijkstra g visited pq distMap pathMap to
-      | isEmptySkewHeap pq = Nothing  -- If the priority queue is empty, no path found
-      | otherwise = case minNodeDist (toList pq) of
-          Nothing -> Nothing  -- No nodes left to process
-          Just (v, l) ->
-            if v == to then Just (visNodes g visited ++ [to], l)  -- If we reached the destination, return the path and distance
-            else if v `elem` visited then dijkstra g visited (deleteMinSkewHeap pq) distMap pathMap to  -- Skip already visited nodes
-            else let newVisited = v : visited
-                     neighbors = G.adj g v  -- Get adjacent nodes
-                     newPQ = foldr (\(Edge _ w l1) acc ->
-                                     if M.findWithDefault (2^31 - 1) w distMap > l + l'
-                                      then insertSkewHeap (w, l + l1) acc
-                                      else acc) (deleteMinSkewHeap pq) neighbors
-                     newDistMap = M.insert v l distMap  -- Update distance map
-                     newPathMap = M.insert v (visNodes g newVisited ++ [v]) pathMap  -- Update path map
-                 in dijkstra g newVisited newPQ newDistMap newPathMap to  -- Continue with the next node
--- | Find the node with the minimum distance in a list of (node, distance) pairs.
+    initialPQ = SH.insert (from, 0) SH.empty'
+    dijkstra pq preds dists =
+      case SH.findMin pq of
+        Nothing -> Nothing
+        Just (current, currentDist)
+          | currentDist > M.findWithDefault (2^31 -1) current dists -> 
+              dijkstra (SH.delete (current, currentDist) pq) preds dists
+          | current == to -> Just (reconstructPath current preds, currentDist)
+          | otherwise ->
+              let
+                neighbors = adj current g
 
+                update (pq', dists', preds') (Edge _ neighbor cost) =
+                  let newDist = currentDist + cost
+                      currentBest = M.findWithDefault (2^31 -1) neighbor dists'
+                  in
+                    if newDist < currentBest
+                      then (SH.insert (neighbor, newDist) pq',
+                            M.insert neighbor newDist dists',
+                            M.insert neighbor current preds')
+                      else (pq', dists', preds')
+
+                (newPQ, newDists, newPreds) = 
+                  foldl update (SH.delete (current, currentDist) pq, dists, preds) neighbors
+              in dijkstra newPQ newPreds newDists
+
+    reconstructPath node preds = reverse $ go node []
+      where
+        go n acc = case M.lookup n preds of
+          Nothing -> n : acc
+          Just prev -> go prev (n : acc)
+                  
 minNodeDist :: Ord b => [(a, b)] -> Maybe (a, b)
 minNodeDist [] = Nothing
-minNodeDist xs = Just $ minimum xs  -- Find the node with the minimum distance
+minNodeDist xs = Just $ minimumBy (\(_, d1) (_, d2) -> compare d1 d2) xs -- Find the node with the minimum distance
 
-visNodes :: Ord a => Graph a b -> [a] -> [a]
-visNodes g visited = filter (`elem` visited) (G.vertices g)
+visited :: Ord a => Graph a b -> [a] -> [a]
+visited g visited = filter (`elem` visited) (G.vertices g)
 
-pQ :: Ord a => [(a, b)] -> SkewHeap (a, b)
-pQ [] = emptySkewHeap
-pQ xs = foldr insertSkewHeap emptySkewHeap xs
-
+pQ :: (Ord a, Ord b) => [(a, b)] -> SkewHeap (a, b)
+pQ xs = case xs of
+  [] -> SH.empty'
+  _  -> foldr SH.insert SH.empty' xs
 
 main :: IO ()
 main = do
@@ -71,21 +82,33 @@ main = do
       Nothing -> print $ 2^31 -1
       Just (list,time) -> do
         print time
-        putStr $ unlines list  -- TODO: read arguments, build graph, output shortest path
+        putStr $ unlines (reverse list)
 
 startGUI :: IO ()
 startGUI = do
-  Right stops <- readStops "stops-air.txt"
-  Right lines <- readLines "lines-air.txt"
+  Right stops <- readStops "stops-gbg.txt"
+  Right lines <- readLines "lines-gbg.txt"
   let graph = graphBuilder stops lines
   runGUI stops lines graph shortestPath
 
-graphBuilder :: [Stop] -> [LineTable] -> Graph String Integer
-graphBuilder stops lines = foldr addLineEdges (foldr G.addVertex G.empty stops) lines
+graphBuilder :: [Stop] -> [LineTable] -> G.Graph String Integer
+graphBuilder stops lines =
+  foldr addLineEdges (foldr G.addVertex G.empty (map stopToName stops)) lines
   where
-    addLineEdges :: LineTable -> Graph String Integer -> Graph String Integer
-    addLineEdges (LineTable line noStops stops) g =
-      let stopPairs = zip stops (tail stops)  -- Create pairs of consecutive stops
-          edges = map (\(s1, s2) -> G.addBiEdge s1 s2 line g) stopPairs  -- Add edges for each pair
-      in foldr id g edges  -- Fold over the edges to add them to the graph
--- | Add edges for each line in the graph, connecting consecutive stops with the line number as the label.
+    stopToName (Stop name _) = name
+
+    addLineEdges :: LineTable -> G.Graph String Integer -> G.Graph String Integer
+    addLineEdges (LineTable _ lineStops) g =
+      let
+    -- Extract stop names and their cumulative times from the start of the line
+        stopNames = map stopName lineStops
+        cumulativeTimes = scanl1 (+) (map time lineStops)  -- e.g. [0,3,5,12]
+
+    -- Create stop pairs along with the actual travel time between them
+        stopPairsWithCost =
+          zip3 stopNames (tail stopNames) (zipWith (-) (tail cumulativeTimes) cumulativeTimes)
+
+    -- Add bi-directional edges with travel time as weight
+        edges = map (\(s1, s2, cost) -> \g -> G.addBiEdge s1 s2 cost g) stopPairsWithCost
+      in
+        foldr ($) g edges

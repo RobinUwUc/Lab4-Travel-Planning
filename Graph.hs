@@ -1,6 +1,6 @@
 module Graph 
   ( -- * Edge
-    Edge                    -- type
+    Edge(..)                    -- type
   , src, dst, label         -- querying an Edge
 
     -- * Graph
