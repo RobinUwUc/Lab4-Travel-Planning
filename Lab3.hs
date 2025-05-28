@@ -17,30 +17,30 @@ shortestPath g from to
   | from == to = Just ([from], 0)
   | otherwise = dijkstra initialPQ M.empty (M.singleton from 0)
   where
-    initialPQ = SH.insert (from, 0) SH.empty'
+    initialPQ = SH.insert (0, from) SH.empty'
+
     dijkstra pq preds dists =
-      case SH.findMin pq of
+      case SH.deleteMin pq of
         Nothing -> Nothing
-        Just (current, currentDist)
-          | currentDist > M.findWithDefault (2^31 -1) current dists -> 
-              dijkstra (SH.delete (current, currentDist) pq) preds dists
+        Just ((currentDist, current), pq')
+          | currentDist > M.findWithDefault (2^31 - 1) current dists ->
+              dijkstra pq' preds dists
           | current == to -> Just (reconstructPath current preds, currentDist)
           | otherwise ->
-              let
-                neighbors = adj current g
+              let neighbors = adj current g
 
-                update (pq', dists', preds') (Edge _ neighbor cost) =
-                  let newDist = currentDist + cost
-                      currentBest = M.findWithDefault (2^31 -1) neighbor dists'
-                  in
-                    if newDist < currentBest
-                      then (SH.insert (neighbor, newDist) pq',
-                            M.insert neighbor newDist dists',
-                            M.insert neighbor current preds')
-                      else (pq', dists', preds')
+                  update (pqAcc, distsAcc, predsAcc) (Edge _ neighbor cost) =
+                    let newDist = currentDist + cost
+                        currentBest = M.findWithDefault (2^31 - 1) neighbor distsAcc
+                    in
+                      if newDist < currentBest
+                        then (SH.insert (newDist, neighbor) pqAcc,
+                              M.insert neighbor newDist distsAcc,
+                              M.insert neighbor current predsAcc)
+                        else (pqAcc, distsAcc, predsAcc)
 
-                (newPQ, newDists, newPreds) = 
-                  foldl update (SH.delete (current, currentDist) pq, dists, preds) neighbors
+                  (newPQ, newDists, newPreds) =
+                    foldl update (pq', dists, preds) neighbors
               in dijkstra newPQ newPreds newDists
 
     reconstructPath node preds = reverse $ go node []
@@ -48,10 +48,6 @@ shortestPath g from to
         go n acc = case M.lookup n preds of
           Nothing -> n : acc
           Just prev -> go prev (n : acc)
-                  
-minNodeDist :: Ord b => [(a, b)] -> Maybe (a, b)
-minNodeDist [] = Nothing
-minNodeDist xs = Just $ minimumBy (\(_, d1) (_, d2) -> compare d1 d2) xs -- Find the node with the minimum distance
 
 visited :: Ord a => Graph a b -> [a] -> [a]
 visited g visited = filter (`elem` visited) (G.vertices g)
@@ -112,3 +108,5 @@ graphBuilder stops lines =
         edges = map (\(s1, s2, cost) -> \g -> G.addBiEdge s1 s2 cost g) stopPairsWithCost
       in
         foldr ($) g edges
+
+

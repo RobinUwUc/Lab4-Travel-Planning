@@ -5,7 +5,7 @@ module SkewHeap (
     insert,
     merge,
     delete,
-    deleteIfFound,
+    deleteMin,
     findMin,
     toList
 ) where
@@ -64,18 +64,7 @@ delete val (Node x l r)
             then Node x nextLeft r
             else Node x l (delete val r)
 
---This takes O(log n) time for each delete, where n is the number of elements in the heap.
--- The overall time complexity is O(m log n), where m is the number of elements to delete.
--- Delete a single element from the skew heap if it is found and return a bool indicating if it was found
-deleteIfFound :: Ord a => a -> SkewHeap a -> (Bool, SkewHeap a)
-deleteIfFound _ Empty = (False, Empty) 
-deleteIfFound val (Node x l r)
-    | x == val = (True, merge l r)
-    | otherwise = 
-        let (foundL, l') = deleteIfFound val l in
-        if foundL
-            then (True, Node x l' r)
-            else 
-                let (foundR, r') = deleteIfFound val r in
-                (foundR, Node x l r')
+deleteMin :: Ord a => SkewHeap a -> Maybe (a, SkewHeap a)
+deleteMin Empty = Nothing
+deleteMin (Node x l r) = Just (x, merge l r)
 
